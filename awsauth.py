@@ -65,13 +65,29 @@ class S3Auth(AuthBase):
 
     def get_canonical_string(self, url, headers, method):
         parsedurl = urlparse(url)
-        objectkey = parsedurl.path[1:]
         query_args = sorted(parsedurl.query.split('&'))
+        is_virtual_hosted_style_url = parsedurl.netloc.endswith(
+            '.s3.amazonaws.com')
 
-        bucket = parsedurl.netloc[:-len(self.service_base_url)]
-        if len(bucket) > 1:
-            # remove last dot
-            bucket = bucket[:-1]
+        if is_virtual_hosted_style_url:
+            objectkey = parsedurl.path[1:]
+            bucket = parsedurl.netloc[:-len(self.service_base_url)]
+            if len(bucket) > 1:
+                # remove last dot
+                bucket = bucket[:-1]
+        else:
+            # path-style URL
+            # examples:
+            #  /mybucket
+            #  /mybucket/object
+            #  /mybucket/folder/object
+            path_split = parsedurl.path[1:].split('/', 1)
+            bucket = ''
+            objectkey = ''
+            if len(path_split) > 0:
+                bucket = path_split[0]
+            if len(path_split) > 1:
+                objectkey = path_split[1]
 
         interesting_headers = {
             'content-md5': '',
@@ -107,8 +123,11 @@ class S3Auth(AuthBase):
         if bucket != '':
             buf += '/%s' % bucket
 
-        # add the objectkey. even if it doesn't exist, add the slash
-        buf += '/%s' % objectkey
+        # add the objectkey.
+        # If this is a virtual-hosted-style URL
+        # add the slash even if the objectkey doesn't exist
+        if objectkey or is_virtual_hosted_style_url:
+            buf += '/%s' % objectkey
 
         params_found = False
 
